@@ -1,9 +1,10 @@
 # GeoFast
 
-High-performance geospatial processing framework with GPU acceleration, Numba JIT compilation, file format conversion, and intelligent caching.
+High-performance geospatial processing framework: an aerial-spray line-generation engine (compiled Rust), GPU acceleration, Numba JIT compilation, file format conversion, and intelligent caching.
 
 ## Features
 
+- **Aerial spray line generation**: compiled Rust engine (ellipsoidal projection, sweep-angle search, per-gap fly-through-vs-turn, boustrophedon cell decomposition) producing crop-spraying coverage paths
 - **Multi-backend execution**: CPU, CPU Parallel, GPU (CUDA), Numba JIT, Hybrid
 - **Automatic backend selection**: Based on data size and available hardware
 - **File format conversion**: GeoJSON, KML, GPX, CSV, MPZ/MapPlus
@@ -29,7 +30,35 @@ pip install geofast[gpu]
 pip install geofast[all]
 ```
 
+Prebuilt wheels bundle the compiled spray engine, so `pip install geofast` needs **no Rust
+toolchain**. `numpy` and `shapely` are installed by default. A Rust toolchain is only
+required when building from source (an sdist or a git checkout), which is handled
+automatically by [maturin](https://www.maturin.rs).
+
 ## Quick Start
+
+### Spray Pattern Generation
+
+```python
+from geofast import generate_spray_patterns
+
+# Read a field boundary (GeoJSON/KML/...), generate spray lines, write the result.
+# The Rust engine selects the spray angle and decomposes the field itself.
+generate_spray_patterns(
+    "field.geojson", "spray.geojson",
+    config={"swath_width_ft": 50.0},
+)
+```
+
+For finer control, the generator and optimizer are available directly:
+
+```python
+from geofast.spray_line_generator import SprayLineGenerator, SprayConfig
+
+gen = SprayLineGenerator(SprayConfig(swath_width_ft=50.0))
+result = gen.generate(field_coords)  # field_coords: GeoJSON polygon rings, lon/lat degrees
+print(result.num_lines, result.total_spray_distance_miles, result.field_area_acres)
+```
 
 ### File Format Conversion
 
