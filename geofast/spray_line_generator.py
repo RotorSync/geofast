@@ -47,6 +47,10 @@ class SprayResult:
     # gaps shorter than the turn-around break-even. Each is a 2-point (lon, lat) line.
     transit_lines: List[List[Tuple[float, float]]] = field(default_factory=list)
     transit_distance_ft: float = 0.0
+    # Engine's own flight counts (the Python count_effective_lines under-counts the
+    # engine's segmented output, so prefer these): total turn-arounds and spray passes.
+    num_turns: int = 0
+    num_runs: int = 0
 
 
 class SprayLineGenerator:
@@ -77,7 +81,7 @@ class SprayLineGenerator:
         exterior = [(c[0], c[1]) for c in rings[0]]
         holes = [[(c[0], c[1]) for c in ring] for ring in rings[1:]]
 
-        segments, total_distance_ft, area_acres, bearing, transit_distance_ft = _native.plan_lines(
+        segments, total_distance_ft, area_acres, bearing, transit_distance_ft, num_turns, num_runs = _native.plan_lines(
             exterior, holes, self.config.swath_width_ft
         )
 
@@ -104,6 +108,8 @@ class SprayLineGenerator:
             estimated_swath_width_ft=self.config.swath_width_ft,
             transit_lines=transit_coords,
             transit_distance_ft=transit_distance_ft,
+            num_turns=num_turns,
+            num_runs=num_runs,
         )
 
     def generate_geojson(self, geojson_coords: List, bearing_override: Optional[float] = None) -> dict:

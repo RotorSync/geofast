@@ -34,11 +34,12 @@ fn ring_from_coords(coords: Vec<(f64, f64)>) -> Vec<Pt> {
 /// so they default sensibly when omitted.
 ///
 /// Returns `(lines, total_spray_distance_ft, field_area_acres, bearing_deg,
-/// total_transit_distance_ft)`, where each line is
+/// total_transit_distance_ft, num_turns, num_runs)`, where each line is
 /// `(lon0, lat0, lon1, lat1, is_spray)`. `is_spray == false` segments are the
 /// boom-off transit "hops" the planner chose to fly straight across (gaps
 /// shorter than the turn-around break-even); `total_transit_distance_ft` is
-/// their summed length in feet.
+/// their summed length in feet. `num_turns` is the engine's simulated
+/// turn-around count and `num_runs` the total spray passes across plan blocks.
 #[pyfunction]
 #[pyo3(signature = (exterior, holes, swath_ft, trailer_lonlat=None, gpa=None))]
 fn plan_lines(
@@ -47,7 +48,7 @@ fn plan_lines(
     swath_ft: f64,
     trailer_lonlat: Option<(f64, f64)>,
     gpa: Option<f64>,
-) -> PyResult<(Vec<(f64, f64, f64, f64, bool)>, f64, f64, f64, f64)> {
+) -> PyResult<(Vec<(f64, f64, f64, f64, bool)>, f64, f64, f64, f64, i64, i64)> {
     let polygon = Polygon {
         exterior: ring_from_coords(exterior),
         interiors: holes.into_iter().map(ring_from_coords).collect(),
@@ -71,12 +72,17 @@ fn plan_lines(
         None => [0.0, 0.0],
     };
 
-    let (plans, _sim, _t) = quote(&geom_ft, &p, Some(trailer_ft), 2.0);
+    let (plans, sim, _t) = quote(&geom_ft, &p, Some(trailer_ft), 2.0);
 
     let total_spray_distance_ft: f64 = plans.iter().map(|pl| pl.spray_ft).sum();
     let total_transit_distance_ft: f64 = plans.iter().map(|pl| pl.dead_ft).sum();
     let field_area_acres = geom_ft.area() / ACRE_FT2;
     let bearing_deg = plans.first().map(|pl| pl.angle_deg).unwrap_or(0.0);
+    // Engine's own counts: total turn-arounds from the flight sim, and spray runs
+    // (passes) across all plan blocks. count_effective_lines in the Python layer
+    // mis-counts the engine's segmented output, so callers should prefer these.
+    let num_turns: i64 = sim.n_turns;
+    let num_runs: i64 = plans.iter().map(|pl| pl.n_runs).sum();
 
     let mut lines: Vec<(f64, f64, f64, f64, bool)> = Vec::new();
     for pl in &plans {
@@ -95,6 +101,8 @@ fn plan_lines(
         field_area_acres,
         bearing_deg,
         total_transit_distance_ft,
+        num_turns,
+        num_runs,
     ))
 }
 

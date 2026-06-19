@@ -137,6 +137,15 @@ def test_transit_hops_exposed():
         assert len(ln) == 2 and len(ln[0]) == 2
 
 
+def test_engine_turn_counts_are_sane():
+    """Engine turn/run counts must reflect the real pass count, not the collapsed
+    count_effective_lines value (which returned ~1 for a full field)."""
+    res = SprayLineGenerator(SprayConfig(swath_width_ft=50.0)).generate(RECT_FIELD)
+    # ~2878 ft wide / 50 ft swath => ~57 passes
+    assert res.num_runs >= 30, f"num_runs collapsed: {res.num_runs}"
+    assert res.num_turns >= 30, f"num_turns collapsed: {res.num_turns}"
+
+
 def test_solid_field_has_no_hops():
     """A simple convex field needs no fly-through hops."""
     res = SprayLineGenerator(SprayConfig(swath_width_ft=50.0)).generate(RECT_FIELD)
@@ -152,6 +161,9 @@ def test_geojson_emits_hop_features():
     assert len(hops) > 0
     assert fc["properties"]["num_hops"] == len(hops)
     assert fc["properties"]["hop_feet"] > 0
+    # Engine turn/track counts surface in properties and aren't collapsed
+    assert fc["properties"]["num_turns"] >= 30
+    assert fc["properties"]["num_tracks"] >= 30
     for f in hops:
         assert f["geometry"]["type"] == "LineString"
 
