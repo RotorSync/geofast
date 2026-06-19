@@ -303,15 +303,16 @@ def generate_lines_for_polygon(
     polygon: Polygon,
     config: SprayConfig,
     bearing: Optional[float] = None
-) -> Tuple[List[List[Tuple[float, float]]], float, float, List[List[Tuple[float, float]]], float, int, int]:
+) -> Tuple[List[List[Tuple[float, float]]], float, float, List[List[Tuple[float, float]]], float, int, int, float]:
     """
     Generate spray lines for a single polygon.
 
     Returns:
         Tuple of (lines, total_distance_ft, area_acres, transit_lines,
-        transit_distance_ft, num_turns, num_runs). transit_lines are the boom-off
-        "hops" the engine chose to fly straight across instead of turning around;
-        num_turns/num_runs are the engine's own flight counts.
+        transit_distance_ft, num_turns, num_runs, bearing_deg). transit_lines are
+        the boom-off "hops" the engine chose to fly straight across instead of
+        turning around; num_turns/num_runs are the engine's own flight counts;
+        bearing_deg is the angle the engine selected.
     """
     # Create generator config
     gen_config = GeneratorConfig(swath_width_ft=config.swath_width_ft)
@@ -326,7 +327,8 @@ def generate_lines_for_polygon(
     result = generator.generate(coords, bearing_override=bearing)
 
     return (result.lines, result.total_spray_distance_ft, result.field_area_acres,
-            result.transit_lines, result.transit_distance_ft, result.num_turns, result.num_runs)
+            result.transit_lines, result.transit_distance_ft, result.num_turns,
+            result.num_runs, result.spray_bearing_deg)
 
 
 def calculate_optimal_bearing(polygon: Polygon, config: SprayConfig) -> Tuple[float, int, int]:
@@ -506,14 +508,15 @@ def generate_spray_pattern_geojson(
     # Check for powerlines
     has_powerlines, exclusion_zones = check_powerlines(polygon)
     
-    # Determine angle
-    if angle is None:
-        angle, _, _ = calculate_optimal_bearing(polygon, spray_config)
-    
-    # Generate lines
-    lines, total_distance_ft, area_acres, transit_lines, transit_distance_ft, eng_num_turns, eng_num_runs = generate_lines_for_polygon(
+    # Generate lines. The engine runs its own sweep-angle search and ignores any
+    # bearing_override, so when no angle is forced we do NOT pre-compute one with a
+    # separate calculate_optimal_bearing call (that would plan the field a second
+    # time, wastefully); the engine-selected bearing comes back from this call.
+    lines, total_distance_ft, area_acres, transit_lines, transit_distance_ft, eng_num_turns, eng_num_runs, eng_bearing = generate_lines_for_polygon(
         polygon, spray_config, bearing=angle
     )
+    if angle is None:
+        angle = eng_bearing
 
     # Build GeoJSON features
     features = []
@@ -612,7 +615,7 @@ def generate_parallel_lines(
     Legacy API - wraps new SprayLineGenerator.
     """
     config = SprayConfig(swath_width_ft=swath_width_ft)
-    lines, _, _, _, _, _, _ = generate_lines_for_polygon(polygon, config, bearing=angle_deg)
+    lines, _, _, _, _, _, _, _ = generate_lines_for_polygon(polygon, config, bearing=angle_deg)
     return [LineString(line) for line in lines]
 
 
@@ -629,7 +632,7 @@ def calculate_efficiency(
     if config is None:
         config = SprayConfig()
     
-    lines, total_distance_ft, area_acres, _, _, _, _ = generate_lines_for_polygon(
+    lines, total_distance_ft, area_acres, _, _, _, _, _ = generate_lines_for_polygon(
         polygon, config, bearing=angle_deg
     )
     
@@ -685,7 +688,7 @@ def optimize_spray_pattern(
     """
     angle, ns_lines, ew_lines = calculate_optimal_bearing(polygon, config)
     
-    lines, total_distance_ft, area_acres, _, _, _, _ = generate_lines_for_polygon(
+    lines, total_distance_ft, area_acres, _, _, _, _, _ = generate_lines_for_polygon(
         polygon, config, bearing=angle
     )
     
