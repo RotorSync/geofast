@@ -12,7 +12,7 @@ Coordinates are WGS84 lon/lat degrees throughout (GeoJSON order: lon first).
 
 import json
 from typing import List, Tuple, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from . import _native
 
@@ -43,6 +43,10 @@ class SprayResult:
     efficiency_miles_per_acre: float
     spray_bearing_deg: float
     estimated_swath_width_ft: float
+    # Boom-off transit segments the engine chose to fly straight across ("hops"):
+    # gaps shorter than the turn-around break-even. Each is a 2-point (lon, lat) line.
+    transit_lines: List[List[Tuple[float, float]]] = field(default_factory=list)
+    transit_distance_ft: float = 0.0
 
 
 class SprayLineGenerator:
@@ -73,17 +77,18 @@ class SprayLineGenerator:
         exterior = [(c[0], c[1]) for c in rings[0]]
         holes = [[(c[0], c[1]) for c in ring] for ring in rings[1:]]
 
-        segments, total_distance_ft, area_acres, bearing = _native.plan_lines(
+        segments, total_distance_ft, area_acres, bearing, transit_distance_ft = _native.plan_lines(
             exterior, holes, self.config.swath_width_ft
         )
 
-        # Each spray segment (is_spray=True) becomes a 2-point line; boom-off
-        # transit segments are dropped from the spray-line set.
-        line_coords: List[List[Tuple[float, float]]] = [
-            [(lon0, lat0), (lon1, lat1)]
-            for (lon0, lat0, lon1, lat1, is_spray) in segments
-            if is_spray
-        ]
+        # Each spray segment (is_spray=True) becomes a 2-point spray line; each
+        # boom-off transit segment (is_spray=False) becomes a 2-point "hop" the
+        # engine chose to fly straight across instead of turning around.
+        line_coords: List[List[Tuple[float, float]]] = []
+        transit_coords: List[List[Tuple[float, float]]] = []
+        for (lon0, lat0, lon1, lat1, is_spray) in segments:
+            seg = [(lon0, lat0), (lon1, lat1)]
+            (line_coords if is_spray else transit_coords).append(seg)
 
         total_distance_miles = total_distance_ft / 5280.0
         efficiency = total_distance_miles / area_acres if area_acres > 0 else 0.0
@@ -96,7 +101,9 @@ class SprayLineGenerator:
             field_area_acres=area_acres,
             efficiency_miles_per_acre=efficiency,
             spray_bearing_deg=bearing,
-            estimated_swath_width_ft=self.config.swath_width_ft
+            estimated_swath_width_ft=self.config.swath_width_ft,
+            transit_lines=transit_coords,
+            transit_distance_ft=transit_distance_ft,
         )
 
     def generate_geojson(self, geojson_coords: List, bearing_override: Optional[float] = None) -> dict:
