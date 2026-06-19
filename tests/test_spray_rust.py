@@ -107,6 +107,55 @@ def test_lines_lie_within_bbox():
             assert minlat - eps <= lat <= maxlat + eps
 
 
+# Rectangle with a small interior hole (~460x365 ft, well under the ~1760 ft
+# turn-around break-even) so scan lines fly straight across it -> transit "hops".
+HOLED_FIELD = [
+    [
+        (-97.500, 38.000),
+        (-97.490, 38.000),
+        (-97.490, 38.008),
+        (-97.500, 38.008),
+        (-97.500, 38.000),
+    ],
+    [
+        (-97.4958, 38.0035),
+        (-97.4942, 38.0035),
+        (-97.4942, 38.0045),
+        (-97.4958, 38.0045),
+        (-97.4958, 38.0035),
+    ],
+]
+
+
+def test_transit_hops_exposed():
+    """A field with a small internal gap should expose boom-off transit hops."""
+    res = SprayLineGenerator(SprayConfig(swath_width_ft=50.0)).generate(HOLED_FIELD)
+    assert res.num_lines > 0
+    assert len(res.transit_lines) > 0, "expected fly-through hops over the hole"
+    assert res.transit_distance_ft > 0
+    for ln in res.transit_lines:
+        assert len(ln) == 2 and len(ln[0]) == 2
+
+
+def test_solid_field_has_no_hops():
+    """A simple convex field needs no fly-through hops."""
+    res = SprayLineGenerator(SprayConfig(swath_width_ft=50.0)).generate(RECT_FIELD)
+    assert res.transit_lines == []
+    assert res.transit_distance_ft == 0.0
+
+
+def test_geojson_emits_hop_features():
+    from geofast.spray_optimizer import generate_spray_pattern_geojson
+    geom = {"type": "Polygon", "coordinates": HOLED_FIELD}
+    fc = generate_spray_pattern_geojson(geom, config={"swath_width_ft": 50.0})
+    hops = [f for f in fc["features"] if f["properties"].get("type") == "hop"]
+    assert len(hops) > 0
+    assert fc["properties"]["num_hops"] == len(hops)
+    assert fc["properties"]["hop_feet"] > 0
+    for f in hops:
+        assert f["geometry"]["type"] == "LineString"
+
+
 def test_end_to_end_generate_spray_patterns(tmp_path):
     from geofast.formats import generate_spray_patterns
 

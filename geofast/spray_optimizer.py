@@ -303,26 +303,29 @@ def generate_lines_for_polygon(
     polygon: Polygon,
     config: SprayConfig,
     bearing: Optional[float] = None
-) -> Tuple[List[List[Tuple[float, float]]], float, float]:
+) -> Tuple[List[List[Tuple[float, float]]], float, float, List[List[Tuple[float, float]]], float]:
     """
     Generate spray lines for a single polygon.
-    
+
     Returns:
-        Tuple of (lines, total_distance_ft, area_acres)
+        Tuple of (lines, total_distance_ft, area_acres, transit_lines,
+        transit_distance_ft). transit_lines are the boom-off "hops" the engine
+        chose to fly straight across instead of turning around.
     """
     # Create generator config
     gen_config = GeneratorConfig(swath_width_ft=config.swath_width_ft)
     generator = SprayLineGenerator(gen_config)
-    
+
     # Get coordinates
     coords = [list(polygon.exterior.coords)]
     for hole in polygon.interiors:
         coords.append(list(hole.coords))
-    
+
     # Generate lines
     result = generator.generate(coords, bearing_override=bearing)
-    
-    return result.lines, result.total_spray_distance_ft, result.field_area_acres
+
+    return (result.lines, result.total_spray_distance_ft, result.field_area_acres,
+            result.transit_lines, result.transit_distance_ft)
 
 
 def calculate_optimal_bearing(polygon: Polygon, config: SprayConfig) -> Tuple[float, int, int]:
@@ -507,10 +510,10 @@ def generate_spray_pattern_geojson(
         angle, _, _ = calculate_optimal_bearing(polygon, spray_config)
     
     # Generate lines
-    lines, total_distance_ft, area_acres = generate_lines_for_polygon(
+    lines, total_distance_ft, area_acres, transit_lines, transit_distance_ft = generate_lines_for_polygon(
         polygon, spray_config, bearing=angle
     )
-    
+
     # Build GeoJSON features
     features = []
     for line in lines:
@@ -522,6 +525,20 @@ def generate_spray_pattern_geojson(
             },
             'properties': {
                 'type': 'spray_line'
+            }
+        })
+
+    # Boom-off transit "hops" the engine flew straight across (instead of the
+    # app deriving them heuristically). Emitted as their own feature type.
+    for hop in transit_lines:
+        features.append({
+            'type': 'Feature',
+            'geometry': {
+                'type': 'LineString',
+                'coordinates': hop
+            },
+            'properties': {
+                'type': 'hop'
             }
         })
     
@@ -558,7 +575,9 @@ def generate_spray_pattern_geojson(
             'acres': area_acres,
             'num_tracks': num_lines,
             'total_miles': total_miles,
-            'hasPowerlines': has_powerlines
+            'hasPowerlines': has_powerlines,
+            'num_hops': len(transit_lines),
+            'hop_feet': transit_distance_ft
         }
     }
     
@@ -590,7 +609,7 @@ def generate_parallel_lines(
     Legacy API - wraps new SprayLineGenerator.
     """
     config = SprayConfig(swath_width_ft=swath_width_ft)
-    lines, _, _ = generate_lines_for_polygon(polygon, config, bearing=angle_deg)
+    lines, _, _, _, _ = generate_lines_for_polygon(polygon, config, bearing=angle_deg)
     return [LineString(line) for line in lines]
 
 
@@ -607,7 +626,7 @@ def calculate_efficiency(
     if config is None:
         config = SprayConfig()
     
-    lines, total_distance_ft, area_acres = generate_lines_for_polygon(
+    lines, total_distance_ft, area_acres, _, _ = generate_lines_for_polygon(
         polygon, config, bearing=angle_deg
     )
     
