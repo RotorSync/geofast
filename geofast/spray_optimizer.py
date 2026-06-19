@@ -303,14 +303,15 @@ def generate_lines_for_polygon(
     polygon: Polygon,
     config: SprayConfig,
     bearing: Optional[float] = None
-) -> Tuple[List[List[Tuple[float, float]]], float, float, List[List[Tuple[float, float]]], float]:
+) -> Tuple[List[List[Tuple[float, float]]], float, float, List[List[Tuple[float, float]]], float, int, int]:
     """
     Generate spray lines for a single polygon.
 
     Returns:
         Tuple of (lines, total_distance_ft, area_acres, transit_lines,
-        transit_distance_ft). transit_lines are the boom-off "hops" the engine
-        chose to fly straight across instead of turning around.
+        transit_distance_ft, num_turns, num_runs). transit_lines are the boom-off
+        "hops" the engine chose to fly straight across instead of turning around;
+        num_turns/num_runs are the engine's own flight counts.
     """
     # Create generator config
     gen_config = GeneratorConfig(swath_width_ft=config.swath_width_ft)
@@ -325,7 +326,7 @@ def generate_lines_for_polygon(
     result = generator.generate(coords, bearing_override=bearing)
 
     return (result.lines, result.total_spray_distance_ft, result.field_area_acres,
-            result.transit_lines, result.transit_distance_ft)
+            result.transit_lines, result.transit_distance_ft, result.num_turns, result.num_runs)
 
 
 def calculate_optimal_bearing(polygon: Polygon, config: SprayConfig) -> Tuple[float, int, int]:
@@ -510,7 +511,7 @@ def generate_spray_pattern_geojson(
         angle, _, _ = calculate_optimal_bearing(polygon, spray_config)
     
     # Generate lines
-    lines, total_distance_ft, area_acres, transit_lines, transit_distance_ft = generate_lines_for_polygon(
+    lines, total_distance_ft, area_acres, transit_lines, transit_distance_ft, eng_num_turns, eng_num_runs = generate_lines_for_polygon(
         polygon, spray_config, bearing=angle
     )
 
@@ -557,39 +558,41 @@ def generate_spray_pattern_geojson(
                 }
             })
     
-    # Calculate stats
+    # Calculate stats. Use the engine's own pass/turn counts — count_effective_lines
+    # under-counts the engine's segmented output (it can collapse a whole field to 1).
     total_miles = total_distance_ft / 5280
-    num_lines = count_effective_lines(lines, angle, spray_config.swath_width_ft)
-    
+    num_tracks = eng_num_runs
+    num_turns = eng_num_turns
+
     # Estimate time
     spray_time_hr = total_miles / spray_config.spray_speed_mph if spray_config.spray_speed_mph > 0 else 0
-    turn_time_hr = (num_lines * spray_config.turn_time_sec) / 3600
+    turn_time_hr = (num_turns * spray_config.turn_time_sec) / 3600
     total_time_hr = spray_time_hr + turn_time_hr
     acres_per_hour = area_acres / total_time_hr if total_time_hr > 0 else 0
-    
+
     result = {
         'type': 'FeatureCollection',
         'features': features,
         'properties': {
             'angle': angle,
             'acres': area_acres,
-            'num_tracks': num_lines,
+            'num_tracks': num_tracks,
+            'num_turns': num_turns,
             'total_miles': total_miles,
             'hasPowerlines': has_powerlines,
             'num_hops': len(transit_lines),
             'hop_feet': transit_distance_ft
         }
     }
-    
+
     if include_metadata:
         result['properties'].update({
             'acres_per_hour': acres_per_hour,
             'total_time_min': total_time_hr * 60,
-            'num_turns': max(0, num_lines - 1),
             'spray_time_min': spray_time_hr * 60,
             'turn_time_min': turn_time_hr * 60
         })
-    
+
     return result
 
 
@@ -609,7 +612,7 @@ def generate_parallel_lines(
     Legacy API - wraps new SprayLineGenerator.
     """
     config = SprayConfig(swath_width_ft=swath_width_ft)
-    lines, _, _, _, _ = generate_lines_for_polygon(polygon, config, bearing=angle_deg)
+    lines, _, _, _, _, _, _ = generate_lines_for_polygon(polygon, config, bearing=angle_deg)
     return [LineString(line) for line in lines]
 
 
@@ -626,7 +629,7 @@ def calculate_efficiency(
     if config is None:
         config = SprayConfig()
     
-    lines, total_distance_ft, area_acres, _, _ = generate_lines_for_polygon(
+    lines, total_distance_ft, area_acres, _, _, _, _ = generate_lines_for_polygon(
         polygon, config, bearing=angle_deg
     )
     
@@ -682,7 +685,7 @@ def optimize_spray_pattern(
     """
     angle, ns_lines, ew_lines = calculate_optimal_bearing(polygon, config)
     
-    lines, total_distance_ft, area_acres = generate_lines_for_polygon(
+    lines, total_distance_ft, area_acres, _, _, _, _ = generate_lines_for_polygon(
         polygon, config, bearing=angle
     )
     
