@@ -44,8 +44,9 @@ jobs:
         include:
           - runner: macos-14   # Apple Silicon
             target: aarch64
-          - runner: macos-13   # Intel
-            target: x86_64
+          # macOS Intel (x86_64) is omitted: macos-13 Intel runners are scarce and
+          # block releases. To re-add it, cross-compile on macos-14 with
+          # `target: x86_64` (add x86_64-apple-darwin) rather than using macos-13.
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
