@@ -1,0 +1,23 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "jobId": "test-L", "name": "L-shaped test field" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-97.500, 38.000],
+            [-97.488, 38.000],
+            [-97.488, 38.004],
+            [-97.494, 38.004],
+            [-97.494, 38.009],
+            [-97.500, 38.009],
+            [-97.500, 38.000]
+          ]
+        ]
+      }
+    }
+  ]
+}

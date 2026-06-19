@@ -327,34 +327,27 @@ def generate_lines_for_polygon(
 
 def calculate_optimal_bearing(polygon: Polygon, config: SprayConfig) -> Tuple[float, int, int]:
     """
-    Calculate optimal bearing for a polygon.
-    
+    Determine the spray bearing for a polygon.
+
+    The planning engine runs its own sweep-angle search (and per-cell angles via
+    boustrophedon decomposition), so this no longer probes N-S vs E-W with two
+    separate passes. It runs the planner once and reports the engine-selected
+    bearing. The line count is returned in both the ns/ew slots to preserve the
+    ``(bearing, ns_lines, ew_lines)`` shape consumed by ``optimize_multi_field``.
+
     Returns:
         Tuple of (optimal_bearing, ns_lines, ew_lines)
     """
     gen_config = GeneratorConfig(swath_width_ft=config.swath_width_ft)
     generator = SprayLineGenerator(gen_config)
-    
+
     coords = [list(polygon.exterior.coords)]
-    
-    # Try N-S (0°)
-    result_ns = generator.generate(coords, bearing_override=0)
-    ns_lines = count_effective_lines(result_ns.lines, 0, config.swath_width_ft)
-    
-    # Try E-W (90°)
-    result_ew = generator.generate(coords, bearing_override=90)
-    ew_lines = count_effective_lines(result_ew.lines, 90, config.swath_width_ft)
-    
-    # Pick direction (with N-S preference)
-    if ns_lines == 0 and ew_lines == 0:
-        return 0, 0, 0
-    
-    ew_advantage = (ns_lines - ew_lines) / max(ns_lines, 1)
-    
-    if ew_advantage > NS_PREFERENCE_THRESHOLD:
-        return 90, ns_lines, ew_lines
-    else:
-        return 0, ns_lines, ew_lines
+    for hole in polygon.interiors:
+        coords.append(list(hole.coords))
+
+    result = generator.generate(coords)
+    n_lines = result.num_lines
+    return result.spray_bearing_deg, n_lines, n_lines
 
 
 # ============================================================================

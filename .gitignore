@@ -3,6 +3,11 @@ dist/
 build/
 *.egg-info/
 
+# Rust / native extension build artifacts
+rust/target/
+*.so
+*.pyd
+
 # Python cache
 __pycache__/
 *.py[cod]
