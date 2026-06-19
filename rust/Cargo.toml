@@ -1,0 +1,22 @@
+[package]
+name = "geofast-native"
+version = "0.1.0"
+edition = "2021"
+description = "geofast spray line generator — field-predictor Rust engine exposed to Python via PyO3"
+
+# Pure-Rust dependency stack (no C/PROJ/GEOS), so this builds into a wheel.
+# `geo` pulls in `i_overlay` transitively for the boolean ops used by decompose.rs.
+[dependencies]
+geo = "0.33.1"
+geographiclib-rs = "0.2.7"
+pyo3 = { version = "0.24", features = ["extension-module", "abi3-py39"] }
+
+[lib]
+name = "_native"
+crate-type = ["cdylib"]
+
+# panic = "abort" is intentionally NOT set: PyO3 needs unwinding so a panic in
+# the planner surfaces as a Python exception instead of aborting the interpreter.
+[profile.release]
+lto = true
+codegen-units = 1

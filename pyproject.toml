@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["maturin>=1.5,<2"]
+build-backend = "maturin"
 
 [project]
 name = "geofast"
@@ -76,12 +76,12 @@ dev = [
 [project.scripts]
 geofast = "geofast.cli:main"
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["geofast*"]
-
-[tool.setuptools.package-data]
-geofast = ["py.typed"]
+[tool.maturin]
+# Mixed Rust/Python project: the pure-Python package lives at the repo root
+# (./geofast) and the compiled engine is built into it as geofast/_native.
+python-source = "."
+module-name = "geofast._native"
+manifest-path = "rust/Cargo.toml"
 
 [tool.black]
 line-length = 100
