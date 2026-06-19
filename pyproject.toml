@@ -44,6 +44,7 @@ classifiers = [
 
 dependencies = [
     "numpy>=1.21",
+    "shapely>=2.0",
 ]
 
 [project.optional-dependencies]
